@@ -1,0 +1,281 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "백엔드 스토리지 서비스 구현",
+        "description": "expenses.json 파일을 읽고 쓰는 storage_service.py 모듈을 구현하여 데이터 영속성을 관리합니다.",
+        "details": "backend/services/storage_service.py 파일을 생성하고 다음 함수를 구현:\n\n1. load_expenses() - expenses.json 읽어서 리스트 반환, 파일 없으면 빈 배열 반환\n2. save_expenses(data: list) - 리스트를 expenses.json에 JSON 형식으로 저장\n3. append_expense(item: dict) - UUID v4 생성, created_at 타임스탬프 추가 후 기존 데이터에 append\n4. get_expense_by_id(expense_id: str) - ID로 특정 항목 조회\n5. delete_expense_by_id(expense_id: str) - ID로 항목 삭제\n6. update_expense_by_id(expense_id: str, updated_data: dict) - ID로 항목 업데이트\n\nVercel 서버리스 환경 대응:\n- VERCEL 환경변수 감지 시 /tmp/expenses.json 사용\n- 로컬 개발 시 backend/data/expenses.json 사용\n\nimport 필요: json, uuid, datetime, os, pathlib",
+        "testStrategy": "1. 단위 테스트: 각 함수가 정상적으로 파일을 읽고 쓰는지 확인\n2. 통합 테스트: 데이터 추가 → 조회 → 수정 → 삭제 전체 흐름 검증\n3. 엣지 케이스: 파일 없음, 빈 데이터, 잘못된 ID 처리 확인\n4. Vercel 환경변수 시뮬레이션 테스트",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 2,
+        "title": "OCR 서비스 LangChain Chain 구현",
+        "description": "Upstage Vision LLM을 활용하여 영수증 이미지를 구조화된 JSON으로 파싱하는 ocr_service.py를 구현합니다.",
+        "details": "backend/services/ocr_service.py 파일 생성:\n\n1. 이미지 전처리 함수:\n   - preprocess_image(file_bytes: bytes, content_type: str) -> str\n   - JPG/PNG: Pillow로 로드 → Base64 인코딩\n   - PDF: pdf2image로 첫 페이지 이미지 변환 → Base64 인코딩\n\n2. LangChain Chain 구성:\n   - ChatUpstage 모델 초기화 (model='solar-docvl')\n   - PromptTemplate 작성 (시스템 프롬프트 + JSON 스키마 명시)\n   - JsonOutputParser 연결하여 구조화 JSON 반환\n\n3. 시스템 프롬프트 설계:\n   - 영수증 OCR 전문가 페르소나\n   - 정확한 JSON 스키마 명시 (store_name, receipt_date, items[], total_amount 등)\n   - 한국어/영어 영수증 모두 지원 지시\n   - 불확실한 필드는 null 반환 지시\n\n4. parse_receipt(file_bytes: bytes, content_type: str) -> dict 메인 함수\n   - 전처리 → LLM 호출 → JSON 파싱 → 반환\n   - 오류 처리: LLM 응답 실패, JSON 파싱 실패\n\nimport 필요: langchain_upstage, langchain_core, Pillow, pdf2image, base64, os",
+        "testStrategy": "1. 단위 테스트: 이미지 전처리 함수가 올바른 Base64 문자열 반환하는지 확인\n2. 통합 테스트: 실제 영수증 이미지(한국어/영어)로 OCR 실행 → JSON 스키마 검증\n3. images/ 디렉토리의 14종 영수증으로 파싱 성공률 측정 (목표: 80% 이상)\n4. 응답 시간 측정 (목표: 10초 이내)\n5. PDF 파일 변환 테스트",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 3,
+        "title": "업로드 라우터 구현 (POST /api/upload)",
+        "description": "영수증 파일을 받아 OCR 파싱하고 구조화된 JSON을 반환하는 업로드 API를 구현합니다.",
+        "details": "backend/routers/upload.py 파일 생성:\n\n1. POST /api/upload 엔드포인트:\n   - UploadFile 파라미터로 파일 수신\n   - 파일 형식 검증 (JPG, PNG, PDF만 허용)\n   - 파일 크기 검증 (10MB 이하)\n   - content_type 체크: image/jpeg, image/png, application/pdf\n\n2. 비즈니스 로직:\n   - ocr_service.parse_receipt() 호출하여 파싱 실행\n   - UUID 생성 및 created_at 타임스탬프 추가\n   - 원본 파일을 uploads/ 디렉토리에 저장 (선택적)\n   - 파싱된 JSON 반환 (저장은 프론트엔드에서 사용자 확인 후 수행)\n\n3. 오류 처리:\n   - 400: 파일 형식 오류, 크기 초과\n   - 500: OCR 파싱 실패, LLM API 오류\n   - HTTPException으로 상세 에러 메시지 반환\n\n4. 응답 스키마:\n   - ParsedReceipt 모델 정의 (Pydantic BaseModel)\n   - PRD의 JSON 스키마와 일치하는 구조\n\nimport 필요: fastapi, UploadFile, HTTPException, services.ocr_service",
+        "testStrategy": "1. 정상 케이스: JPG, PNG, PDF 파일 업로드 → 200 응답 확인\n2. 오류 케이스: 10MB 초과 파일 → 400, 미지원 형식(.gif) → 400\n3. Postman/curl로 multipart/form-data 업로드 테스트\n4. images/ 디렉토리의 샘플 영수증으로 E2E 테스트\n5. 응답 JSON 스키마 검증 (모든 필수 필드 존재 확인)",
+        "priority": "high",
+        "dependencies": [
+          2
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 4,
+        "title": "지출 내역 조회 API 구현 (GET /api/expenses)",
+        "description": "저장된 지출 내역을 조회하고 날짜 범위로 필터링할 수 있는 API를 구현합니다.",
+        "details": "backend/routers/expenses.py 파일 생성 (또는 확장):\n\n1. GET /api/expenses 엔드포인트:\n   - 쿼리 파라미터: from_date (YYYY-MM-DD, 선택), to_date (YYYY-MM-DD, 선택)\n   - storage_service.load_expenses() 호출하여 전체 데이터 로드\n   - 날짜 필터링 로직:\n     - from_date 제공 시: receipt_date >= from_date\n     - to_date 제공 시: receipt_date <= to_date\n     - 둘 다 제공 시: 범위 내 데이터만 필터링\n   - 결과를 receipt_date 내림차순(최신순) 정렬하여 반환\n\n2. 응답 형식:\n   - List[ExpenseItem] (Pydantic 모델)\n   - 빈 배열도 정상 응답 (200)\n\n3. localStorage 병행 지원:\n   - 클라이언트가 localStorage 데이터도 활용할 수 있도록 안내 (문서화)\n\nimport 필요: fastapi, APIRouter, datetime, services.storage_service",
+        "testStrategy": "1. 전체 조회: GET /api/expenses → 모든 데이터 반환 확인\n2. 날짜 필터: GET /api/expenses?from_date=2025-07-01&to_date=2025-07-31 → 해당 기간만 반환\n3. 빈 데이터: expenses.json 빈 배열 상태에서 200 응답 확인\n4. 정렬 확인: 최신 날짜가 먼저 오는지 검증\n5. Postman으로 쿼리 파라미터 조합 테스트",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "지출 항목 삭제 API 구현 (DELETE /api/expenses/{id})",
+        "description": "특정 지출 항목을 ID로 삭제하는 API를 구현합니다.",
+        "details": "backend/routers/expenses.py에 추가:\n\n1. DELETE /api/expenses/{id} 엔드포인트:\n   - Path 파라미터: id (UUID)\n   - storage_service.delete_expense_by_id(id) 호출\n   - 성공 시 200과 함께 성공 메시지 반환\n   - 항목 없을 시 404 HTTPException 발생\n\n2. 응답 형식:\n   - {\"message\": \"Expense deleted successfully\", \"id\": \"uuid\"}\n\n3. 오류 처리:\n   - 404: 해당 ID의 항목이 존재하지 않음\n   - 400: 잘못된 UUID 형식\n\nimport 필요: fastapi, HTTPException, services.storage_service",
+        "testStrategy": "1. 정상 케이스: 존재하는 ID로 DELETE → 200 응답, 데이터 삭제 확인\n2. 오류 케이스: 존재하지 않는 ID → 404 응답\n3. 잘못된 UUID 형식 → 400 응답\n4. 삭제 후 GET /api/expenses로 목록 재조회하여 삭제 반영 확인\n5. Postman으로 Path 파라미터 테스트",
+        "priority": "medium",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "지출 항목 수정 API 구현 (PUT /api/expenses/{id})",
+        "description": "특정 지출 항목의 내용을 부분 또는 전체 수정하는 API를 구현합니다.",
+        "details": "backend/routers/expenses.py에 추가:\n\n1. PUT /api/expenses/{id} 엔드포인트:\n   - Path 파라미터: id (UUID)\n   - Request Body: 수정할 필드들 (Pydantic 모델, 모든 필드 Optional)\n   - storage_service.update_expense_by_id(id, updated_data) 호출\n   - 수정된 전체 항목 반환 (200)\n\n2. 부분 업데이트 지원:\n   - 제공된 필드만 업데이트, 나머지는 유지\n   - Pydantic 모델에서 exclude_unset=True 활용\n\n3. 오류 처리:\n   - 404: 항목 없음\n   - 422: 유효하지 않은 데이터 형식\n\nimport 필요: fastapi, HTTPException, Pydantic BaseModel, services.storage_service",
+        "testStrategy": "1. 정상 케이스: 기존 항목의 일부 필드 수정 → 200 응답, 변경 반영 확인\n2. 전체 필드 수정 테스트\n3. 존재하지 않는 ID 수정 시도 → 404\n4. 잘못된 데이터 형식(날짜 형식 오류 등) → 422\n5. 수정 후 GET으로 변경사항 확인\n6. Postman으로 PUT Body 전송 테스트",
+        "priority": "medium",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "지출 통계 API 구현 (GET /api/summary)",
+        "description": "총 지출, 월별 지출, 카테고리별 합계를 제공하는 통계 API를 구현합니다.",
+        "details": "backend/routers/summary.py 파일 생성:\n\n1. GET /api/summary 엔드포인트:\n   - 쿼리 파라미터: month (YYYY-MM, 선택)\n   - storage_service.load_expenses() 호출\n   - 통계 계산 로직:\n     a. total_amount: 전체 기간 총 지출 합계\n     b. this_month_amount: 이번 달(또는 month 파라미터 월) 지출 합계\n     c. category_summary: 카테고리별 지출 합계 (리스트)\n\n2. 응답 형식:\n   ```json\n   {\n     \"total_amount\": 128500,\n     \"this_month_amount\": 45300,\n     \"category_summary\": [\n       {\"category\": \"식료품\", \"amount\": 32000, \"count\": 5},\n       {\"category\": \"외식\", \"amount\": 13300, \"count\": 3}\n     ]\n   }\n   ```\n\n3. 날짜 처리:\n   - month 파라미터 없으면 현재 월 기준\n   - receipt_date 필드로 월 필터링\n\nimport 필요: fastapi, datetime, services.storage_service",
+        "testStrategy": "1. 전체 통계 조회 → total_amount, this_month_amount 정확성 확인\n2. 특정 월 통계: GET /api/summary?month=2025-07 → 해당 월 데이터만 계산\n3. 카테고리별 합계 및 건수 정확성 검증\n4. 빈 데이터일 때 0 반환 확인\n5. Postman으로 다양한 month 파라미터 테스트",
+        "priority": "medium",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 8,
+        "title": "FastAPI 메인 앱에 라우터 등록 및 정적 파일 서빙 설정",
+        "description": "구현된 모든 라우터를 main.py에 등록하고 uploads 디렉토리 정적 파일 서빙을 설정합니다.",
+        "details": "backend/main.py 수정:\n\n1. 라우터 import 및 등록:\n   - from routers import upload, expenses, summary\n   - app.include_router(upload.router, prefix=\"/api\", tags=[\"upload\"])\n   - app.include_router(expenses.router, prefix=\"/api\", tags=[\"expenses\"])\n   - app.include_router(summary.router, prefix=\"/api\", tags=[\"summary\"])\n\n2. uploads/ 디렉토리 자동 생성:\n   - 앱 시작 시 uploads/ 디렉토리가 없으면 생성\n   - pathlib.Path 사용\n\n3. 정적 파일 마운트 (선택적):\n   - app.mount(\"/uploads\", StaticFiles(directory=\"uploads\"), name=\"uploads\")\n   - 원본 영수증 이미지 제공 용도\n\n4. CORS 설정 강화:\n   - Vercel 배포 URL도 allow_origins에 추가 가능하도록 환경변수 활용\n   - 개발 환경: localhost:5173, localhost:3000\n   - 프로덕션 환경: FRONTEND_URL 환경변수 읽기\n\nimport 필요: fastapi.staticfiles.StaticFiles, pathlib, os",
+        "testStrategy": "1. uvicorn 실행 → Swagger UI (/docs)에서 모든 엔드포인트 확인\n2. 각 라우터의 API가 정상 작동하는지 Swagger에서 직접 테스트\n3. uploads/ 디렉토리 자동 생성 확인\n4. CORS 헤더 확인 (curl -H \"Origin: http://localhost:5173\" 테스트)\n5. /api/health 엔드포인트 정상 응답 확인",
+        "priority": "high",
+        "dependencies": [
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 9,
+        "title": "프론트엔드 Vite + React 프로젝트 초기화",
+        "description": "frontend 디렉토리에 Vite + React 프로젝트를 생성하고 기본 설정을 완료합니다.",
+        "details": "frontend/ 디렉토리 생성 및 초기화:\n\n1. Vite 프로젝트 생성:\n   - npm create vite@latest frontend -- --template react\n   - cd frontend && npm install\n\n2. 디렉토리 구조 생성:\n   - src/pages/\n   - src/components/\n   - src/api/\n   - src/utils/\n\n3. package.json 스크립트 확인:\n   - dev: vite\n   - build: vite build\n   - preview: vite preview\n\n4. .gitignore 확인:\n   - node_modules\n   - dist\n   - .env.local\n\n5. 기본 컴포넌트 정리:\n   - App.jsx 초기화 (보일러플레이트 제거)\n   - main.jsx 확인\n\n명령어: cd frontend → npm create vite@latest . -- --template react → npm install",
+        "testStrategy": "1. npm run dev 실행 → http://localhost:5173 정상 접속 확인\n2. 기본 React 앱 화면 표시 확인\n3. HMR(Hot Module Replacement) 동작 확인\n4. 빌드 테스트: npm run build → dist/ 폴더 생성 확인\n5. npm run preview로 프로덕션 빌드 미리보기 확인",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 10,
+        "title": "TailwindCSS 설치 및 디자인 시스템 설정",
+        "description": "TailwindCSS를 설치하고 PRD의 컬러 팔레트, 커스텀 애니메이션, 폰트를 설정합니다.",
+        "details": "frontend/ 디렉토리에서 작업:\n\n1. TailwindCSS 설치:\n   - npm install -D tailwindcss postcss autoprefixer\n   - npx tailwindcss init -p\n\n2. tailwind.config.js 설정:\n   - content: [\"./index.html\", \"./src/**/*.{js,jsx}\"]\n   - theme.extend에 커스텀 애니메이션 추가:\n     - keyframes: slide-up, scale-in, fade-in\n     - animation 클래스 정의\n\n3. index.css에 Tailwind 지시어 추가:\n   ```css\n   @tailwind base;\n   @tailwind components;\n   @tailwind utilities;\n   ```\n\n4. Pretendard 폰트 설정:\n   - index.html의 <head>에 CDN 링크 추가\n   - 또는 Google Fonts Noto Sans KR 대체\n   - CSS에서 font-family 설정\n\n5. 컬러 시스템 검증:\n   - PRD 섹션 10.2의 컬러 팔레트가 기본 Tailwind 클래스로 사용 가능한지 확인\n   - 필요 시 theme.extend.colors에 커스텀 색상 추가\n\n명령어: npm install -D tailwindcss postcss autoprefixer && npx tailwindcss init -p",
+        "testStrategy": "1. TailwindCSS 클래스 적용 테스트 (예: bg-indigo-600, text-gray-900)\n2. 커스텀 애니메이션 동작 확인 (animate-slide-up 등)\n3. 폰트 로딩 확인 (개발자 도구 Network 탭)\n4. 반응형 브레이크포인트 테스트 (sm:, lg: 클래스)\n5. 빌드 후 CSS 번들 크기 확인 (PurgeCSS 동작 확인)",
+        "priority": "high",
+        "dependencies": [
+          9
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 11,
+        "title": "Axios 인스턴스 및 API 클라이언트 설정",
+        "description": "백엔드 API와 통신하기 위한 Axios 인스턴스를 설정하고 API 함수를 작성합니다.",
+        "details": "frontend/src/api/axios.js 파일 생성:\n\n1. Axios 설치:\n   - npm install axios\n\n2. Axios 인스턴스 생성:\n   ```js\n   import axios from 'axios';\n   const api = axios.create({\n     baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',\n     headers: { 'Content-Type': 'application/json' }\n   });\n   export default api;\n   ```\n\n3. API 함수 작성 (frontend/src/api/expenses.js):\n   - uploadReceipt(file): POST /api/upload (multipart/form-data)\n   - getExpenses(fromDate, toDate): GET /api/expenses\n   - deleteExpense(id): DELETE /api/expenses/{id}\n   - updateExpense(id, data): PUT /api/expenses/{id}\n   - getSummary(month): GET /api/summary\n\n4. 에러 핸들링 인터셉터:\n   - api.interceptors.response.use()로 공통 에러 처리\n   - 401, 403, 500 등 상태 코드별 알림 또는 로그\n\n5. 환경변수 설정:\n   - .env.development: VITE_API_BASE_URL=http://localhost:8000\n   - .env.production: VITE_API_BASE_URL=\"\" (Vercel 동일 도메인)\n\n명령어: npm install axios",
+        "testStrategy": "1. API 함수 호출 테스트 (백엔드 실행 후)\n2. 개발 환경 baseURL 확인 (localhost:8000)\n3. 에러 핸들링 동작 확인 (백엔드 중단 시 적절한 에러 메시지)\n4. CORS 이슈 없는지 확인\n5. 프로덕션 환경변수 테스트 (빌드 후 baseURL이 빈 문자열인지 확인)",
+        "priority": "high",
+        "dependencies": [
+          9
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 12,
+        "title": "React Router 설정 및 페이지 라우팅 구성",
+        "description": "React Router를 설치하고 3개 주요 페이지(대시보드, 업로드, 상세)의 라우팅을 설정합니다.",
+        "details": "frontend/src/App.jsx 수정:\n\n1. React Router 설치:\n   - npm install react-router-dom\n\n2. 라우팅 설정:\n   ```jsx\n   import { BrowserRouter, Routes, Route } from 'react-router-dom';\n   import Dashboard from './pages/Dashboard';\n   import UploadPage from './pages/UploadPage';\n   import ExpenseDetail from './pages/ExpenseDetail';\n   \n   function App() {\n     return (\n       <BrowserRouter>\n         <Routes>\n           <Route path=\"/\" element={<Dashboard />} />\n           <Route path=\"/upload\" element={<UploadPage />} />\n           <Route path=\"/expense/:id\" element={<ExpenseDetail />} />\n         </Routes>\n       </BrowserRouter>\n     );\n   }\n   ```\n\n3. 페이지 컴포넌트 스켈레톤 생성:\n   - src/pages/Dashboard.jsx\n   - src/pages/UploadPage.jsx\n   - src/pages/ExpenseDetail.jsx\n   - 각 파일에 기본 구조만 작성 (\"Dashboard\", \"Upload\", \"Detail\" 텍스트)\n\n4. 레이아웃 구조:\n   - 각 페이지에 공통 Header 포함 가능하도록 구조 설계\n\n명령어: npm install react-router-dom",
+        "testStrategy": "1. 각 경로 접속 테스트: /, /upload, /expense/123\n2. 404 페이지 처리 (존재하지 않는 경로)\n3. 페이지 간 내비게이션 동작 확인\n4. useNavigate, useParams 훅 동작 확인\n5. 브라우저 뒤로가기/앞으로가기 정상 작동 확인",
+        "priority": "high",
+        "dependencies": [
+          9
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 13,
+        "title": "공통 컴포넌트 구현 (Header, Toast, Badge, Modal)",
+        "description": "모든 페이지에서 재사용할 공통 UI 컴포넌트를 구현합니다.",
+        "details": "frontend/src/components/ 디렉토리에 4개 컴포넌트 생성:\n\n1. Header.jsx:\n   - 로고 + \"영수증 추가\" 버튼\n   - useNavigate로 /upload 이동\n   - Sticky 헤더 (sticky top-0 z-30)\n   - TailwindCSS: bg-white border-b border-gray-200 shadow-sm h-16\n\n2. Toast.jsx:\n   - Props: type (success/error/info), message, onClose\n   - 3초 후 자동 소멸 (useEffect + setTimeout)\n   - 고정 위치 (fixed bottom-4 right-4)\n   - 애니메이션: animate-slide-up\n   - 색상: success=green-500, error=red-500, info=blue-500\n\n3. Badge.jsx:\n   - Props: category (식료품/외식/교통/쇼핑/의료/기타)\n   - 카테고리별 색상 매핑 (PRD 섹션 10.2)\n   - 스타일: inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium\n\n4. Modal.jsx:\n   - Props: isOpen, onClose, onConfirm, title, message\n   - 오버레이 클릭으로 닫기\n   - 애니메이션: animate-scale-in\n   - 삭제 확인 다이얼로그 용도\n\n각 컴포넌트에 PropTypes 또는 TypeScript 타입 정의 (선택)",
+        "testStrategy": "1. 각 컴포넌트를 Storybook 또는 개별 페이지에서 렌더링 테스트\n2. Toast 자동 소멸 타이머 확인 (3초)\n3. Modal 오버레이 클릭 시 닫힘 동작 확인\n4. Badge 카테고리별 색상 정확성 확인\n5. Header 내비게이션 버튼 동작 확인",
+        "priority": "high",
+        "dependencies": [
+          10,
+          12
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 14,
+        "title": "업로드 페이지 구현 (DropZone, ProgressBar, ParsePreview)",
+        "description": "영수증을 업로드하고 OCR 파싱 결과를 미리보기하는 업로드 페이지를 완성합니다.",
+        "details": "frontend/src/pages/UploadPage.jsx 및 관련 컴포넌트:\n\n1. DropZone.jsx:\n   - Props: onFileSelect\n   - 드래그 앤 드롭 이벤트: onDragOver, onDrop\n   - 파일 선택 버튼: input[type=file] hidden + label 클릭\n   - 허용 형식: accept=\".jpg,.jpeg,.png,.pdf\"\n   - 드래그 오버 시 스타일 변경 (border-indigo-500)\n   - 파일 크기 클라이언트 검증 (10MB)\n\n2. ProgressBar.jsx:\n   - Props: progress (0-100), message\n   - 진행 바 애니메이션 (transition-[width])\n   - OCR 처리 중 텍스트 표시\n\n3. ParsePreview.jsx:\n   - Props: parsedData, onSave, onCancel\n   - 인라인 편집 가능한 폼 (가게명, 날짜, 카테고리, 품목 목록, 합계)\n   - 품목 목록: 동적 추가/삭제 기능\n   - 카테고리 select 드롭다운 (6가지 옵션)\n   - 저장 버튼 → localStorage + 백엔드 POST (선택)\n\n4. UploadPage.jsx 통합:\n   - 상태 관리: file, isUploading, parsedData, toast\n   - 업로드 흐름: DropZone → uploadReceipt API → ProgressBar → ParsePreview\n   - 저장 성공 시 Toast 표시 후 Dashboard로 이동\n   - 오류 시 Toast(error) 표시\n\nimport 필요: useState, useNavigate, api/expenses.js",
+        "testStrategy": "1. 파일 드래그 앤 드롭 동작 확인\n2. JPG, PNG, PDF 파일 업로드 → OCR 파싱 → ParsePreview 표시\n3. 10MB 초과 파일 → 클라이언트 측 차단 확인\n4. ParsePreview에서 필드 수정 → 저장 → 대시보드 이동 확인\n5. ProgressBar 애니메이션 표시 확인\n6. 오류 발생 시 Toast(error) 표시 확인\n7. localStorage에 데이터 저장 확인",
+        "priority": "high",
+        "dependencies": [
+          11,
+          13
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 15,
+        "title": "대시보드 페이지 구현 (SummaryCard, FilterBar, ExpenseList)",
+        "description": "지출 내역 목록과 통계를 표시하는 메인 대시보드 페이지를 구현합니다.",
+        "details": "frontend/src/pages/Dashboard.jsx 및 관련 컴포넌트:\n\n1. SummaryCard.jsx:\n   - Props: totalAmount, thisMonthAmount, categorySummary\n   - 2열 그리드 레이아웃 (총 지출 / 이번달 지출)\n   - 카테고리별 요약 표시 (Badge + 금액)\n   - 금액 포맷팅: ₩ 123,456 (toLocaleString)\n\n2. FilterBar.jsx:\n   - Props: onFilter, onReset\n   - 날짜 입력: input[type=date] (from, to)\n   - 조회 버튼 클릭 → onFilter(fromDate, toDate)\n   - 초기화 버튼 → onReset()\n\n3. ExpenseCard.jsx:\n   - Props: expense (가게명, 날짜, 금액, 카테고리)\n   - 클릭 시 /expense/:id 이동 (useNavigate)\n   - 카드 스타일: bg-white rounded-xl border shadow-sm hover:shadow-md\n   - Badge로 카테고리 표시\n\n4. Dashboard.jsx 통합:\n   - 마운트 시 getExpenses(), getSummary() API 호출\n   - 상태 관리: expenses, summary, dateFilter, isLoading\n   - FilterBar 날짜 적용 → API 재호출\n   - ExpenseCard 리스트 반응형 그리드 (grid-cols-1 sm:grid-cols-2 lg:grid-cols-3)\n   - 빈 상태(Empty State): 데이터 없을 때 안내 메시지 + 등록 버튼\n\n5. localStorage 병행 조회:\n   - localStorage에서 데이터 읽어서 백엔드 데이터와 병합\n   - 중복 제거 (ID 기준)\n\nimport 필요: useState, useEffect, useNavigate, api/expenses.js, Header, SummaryCard 등",
+        "testStrategy": "1. 대시보드 로딩 시 지출 내역 카드 표시 확인\n2. SummaryCard 통계 정확성 확인\n3. FilterBar 날짜 필터 적용 → 필터링된 목록 표시 확인\n4. ExpenseCard 클릭 → 상세 페이지 이동 확인\n5. 빈 상태 표시 확인 (데이터 없을 때)\n6. 반응형 레이아웃 확인 (모바일/태블릿/데스크톱)\n7. localStorage + 백엔드 데이터 병합 확인",
+        "priority": "high",
+        "dependencies": [
+          11,
+          13
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 16,
+        "title": "지출 상세/수정 페이지 구현 (ExpenseDetail)",
+        "description": "특정 지출 항목의 상세 정보를 보고 수정/삭제할 수 있는 페이지를 구현합니다.",
+        "details": "frontend/src/pages/ExpenseDetail.jsx:\n\n1. 페이지 로직:\n   - useParams()로 ID 추출\n   - 마운트 시 getExpenses()로 전체 데이터 로드 후 ID로 필터링 (또는 개별 조회 API)\n   - 상태: expense, isEditing, showDeleteModal\n\n2. 레이아웃:\n   - Header (뒤로가기 버튼 포함)\n   - 원본 영수증 이미지 미리보기 (ReceiptImage 컴포넌트, 선택적)\n   - EditForm 컴포넌트 (수정 모드 활성화 가능)\n   - 삭제 버튼 (빨간색, 위험 스타일)\n   - 수정 저장 버튼 (Primary 스타일)\n\n3. EditForm.jsx 컴포넌트:\n   - Props: expense, isEditing, onChange\n   - 모든 필드 인라인 편집 (input, select)\n   - 품목 목록 편집 지원 (추가/삭제)\n   - 저장 시 updateExpense(id, data) API 호출\n\n4. 삭제 흐름:\n   - 삭제 버튼 클릭 → Modal 열기\n   - Modal 확인 → deleteExpense(id) API → Dashboard 이동\n   - Toast 성공 메시지 표시\n\n5. 오류 처리:\n   - 존재하지 않는 ID → 404 안내 메시지 또는 Dashboard 리다이렉트\n\nimport 필요: useState, useEffect, useParams, useNavigate, Modal, Toast 등",
+        "testStrategy": "1. 대시보드에서 카드 클릭 → 상세 페이지 이동 확인\n2. 상세 정보 정확히 표시되는지 확인\n3. 수정 모드 활성화 → 필드 수정 → 저장 → API 호출 확인\n4. 삭제 버튼 → Modal 표시 → 확인 → 삭제 → Dashboard 이동\n5. 존재하지 않는 ID 접근 시 오류 처리 확인\n6. 뒤로가기 버튼 동작 확인",
+        "priority": "medium",
+        "dependencies": [
+          11,
+          13,
+          15
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 17,
+        "title": "localStorage 병행 저장 로직 구현",
+        "description": "Vercel 서버리스 파일 시스템 비지속 문제에 대응하기 위해 클라이언트 localStorage에 데이터를 병행 저장합니다.",
+        "details": "frontend/src/utils/storage.js 파일 생성:\n\n1. localStorage 유틸 함수:\n   - saveExpenseToLocal(expense): localStorage에 지출 항목 추가\n   - getExpensesFromLocal(): localStorage에서 전체 데이터 조회\n   - deleteExpenseFromLocal(id): ID로 항목 삭제\n   - updateExpenseInLocal(id, updatedData): 항목 수정\n   - mergeExpenses(backendData, localData): 중복 제거 후 병합 (ID 기준)\n\n2. 스토리지 키:\n   - STORAGE_KEY = 'receipt-tracker-expenses'\n\n3. 데이터 동기화 전략:\n   - 업로드 시: ParsePreview 저장 → localStorage + 백엔드\n   - 조회 시: 백엔드 + localStorage 병합 → 최신 데이터 우선\n   - 수정/삭제 시: localStorage도 함께 업데이트\n\n4. 용량 제한 고려:\n   - localStorage 5MB 한도 체크\n   - 초과 시 경고 메시지 (오래된 데이터 삭제 제안)\n\n5. 통합:\n   - Dashboard, UploadPage, ExpenseDetail에서 storage.js 함수 사용\n\nimport 필요: 없음 (순수 JS)",
+        "testStrategy": "1. 업로드 후 localStorage에 데이터 저장 확인 (개발자 도구)\n2. 대시보드에서 localStorage + 백엔드 데이터 병합 확인\n3. 중복 데이터 제거 확인 (같은 ID)\n4. 수정/삭제 후 localStorage 동기화 확인\n5. localStorage 데이터 삭제 후 백엔드 데이터만 표시되는지 확인\n6. 5MB 한도 시뮬레이션 (대량 데이터 저장)",
+        "priority": "medium",
+        "dependencies": [
+          14,
+          15,
+          16
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 18,
+        "title": "Vercel 배포 설정 파일 작성 (vercel.json)",
+        "description": "Vercel 서버리스 환경에서 프론트엔드와 백엔드가 통합 배포되도록 vercel.json을 작성합니다.",
+        "details": "프로젝트 루트에 vercel.json 파일 생성:\n\n1. 빌드 설정:\n   ```json\n   {\n     \"buildCommand\": \"cd frontend && npm install && npm run build\",\n     \"outputDirectory\": \"frontend/dist\",\n     \"devCommand\": \"cd frontend && npm run dev\",\n     \"installCommand\": \"pip install -r backend/requirements.txt && cd frontend && npm install\"\n   }\n   ```\n\n2. 라우팅 설정:\n   - `/api/*` → 백엔드 서버리스 함수 (Python)\n   - 나머지 → 프론트엔드 정적 파일 (SPA fallback)\n\n3. 서버리스 함수 설정:\n   - backend/main.py를 Vercel Python 런타임으로 실행\n   - Mangum ASGI 어댑터 사용 (requirements.txt에 추가 필요)\n   - 환경변수: UPSTAGE_API_KEY\n\n4. 리라이트 규칙:\n   ```json\n   {\n     \"rewrites\": [\n       { \"source\": \"/api/(.*)\", \"destination\": \"/api/index\" },\n       { \"source\": \"/(.*)\", \"destination\": \"/index.html\" }\n     ]\n   }\n   ```\n\n5. 환경변수 설정:\n   - Vercel 대시보드에서 UPSTAGE_API_KEY 등록\n   - VERCEL=1 자동 주입 확인\n\n참고: Vercel Python 서버리스는 Mangum 필요 여부 최신 문서 확인 필요",
+        "testStrategy": "1. vercel.json 문법 검증 (JSON 유효성)\n2. 로컬에서 vercel dev 명령어로 시뮬레이션\n3. /api/health 엔드포인트가 정상 응답하는지 확인\n4. 프론트엔드 라우팅이 SPA fallback 동작하는지 확인\n5. 환경변수가 정상 주입되는지 확인 (로그로 검증)",
+        "priority": "high",
+        "dependencies": [
+          8,
+          10,
+          11,
+          12
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 19,
+        "title": "Vercel 배포 및 환경변수 설정",
+        "description": "GitHub 레포지토리를 Vercel에 연동하고 환경변수를 등록하여 첫 배포를 실행합니다.",
+        "details": "Vercel 배포 절차:\n\n1. GitHub 레포지토리 연동:\n   - Vercel 대시보드 → New Project\n   - GitHub Import → 레포지토리 선택\n   - Root Directory: . (프로젝트 루트)\n\n2. 환경변수 등록:\n   - Settings → Environment Variables\n   - UPSTAGE_API_KEY: Upstage 콘솔에서 복사\n   - VERCEL: 1 (자동 주입, 확인만)\n\n3. 빌드 설정 확인:\n   - Build Command: vercel.json의 buildCommand 사용\n   - Output Directory: frontend/dist\n   - Install Command: requirements.txt + npm install\n\n4. 첫 배포 실행:\n   - Deploy 버튼 클릭\n   - 빌드 로그 모니터링\n   - 배포 URL 확인 (예: https://receipt-tracker.vercel.app)\n\n5. 배포 후 검증:\n   - 프론트엔드 페이지 접속 확인\n   - /api/health 엔드포인트 호출 확인\n   - CORS 오류 없는지 확인\n\n수동 작업 필요 (사용자가 직접 수행)",
+        "testStrategy": "1. Vercel 배포 URL 접속 → 프론트엔드 정상 표시 확인\n2. /api/health 호출 → 200 응답 확인\n3. 업로드 페이지에서 영수증 업로드 → OCR 파싱 성공 확인\n4. 대시보드에서 목록 조회 → localStorage 데이터 표시 확인\n5. 환경변수 누락 시 오류 로그 확인 (Vercel 대시보드)\n6. 배포 실패 시 빌드 로그 분석",
+        "priority": "high",
+        "dependencies": [
+          18
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 20,
+        "title": "E2E 시나리오 검증 및 최종 테스트",
+        "description": "배포된 애플리케이션에서 PRD의 E2E 시나리오 8가지를 모두 검증하고 버그를 수정합니다.",
+        "details": "PRD 섹션 8-2의 E2E 시나리오 체크리스트:\n\n1. E2E-01: JPG 영수증 업로드 → OCR 파싱 → ParsePreview 표시\n2. E2E-02: ParsePreview 필드 수정 → 저장 → 대시보드 카드 추가\n3. E2E-03: 대시보드 날짜 필터 적용 → 필터링된 목록 표시\n4. E2E-04: ExpenseCard 클릭 → 상세 페이지 진입 → 원본 이미지 표시\n5. E2E-05: 항목 삭제 → Modal 확인 → 목록 갱신\n6. E2E-06: PDF 파일 업로드 → 정상 파싱 및 저장\n7. E2E-07: 10MB 초과 파일 업로드 → 오류 메시지 차단\n8. E2E-08: .gif 등 미지원 형식 → 오류 메시지\n\n검증 방법:\n- 실제 Vercel 배포 URL에서 수동 테스트\n- images/ 디렉토리의 샘플 영수증 14종 활용\n- 브라우저 개발자 도구로 네트워크/콘솔 모니터링\n- localStorage, API 응답 확인\n\n버그 발견 시:\n- 원인 분석 → 수정 → git push → 자동 재배포 → 재검증\n\n완료 기준:\n- Must Have 시나리오 (E2E-01, 02, 03, 07, 08) 100% 통과\n- Should Have 시나리오 (E2E-04, 05, 06) 80% 이상 통과",
+        "testStrategy": "1. 체크리스트 기반 수동 테스트 실행\n2. 각 시나리오별 스크린샷 또는 동영상 캡처\n3. OCR 파싱 성공률 측정 (14종 영수증 → 80% 이상 목표)\n4. 응답 시간 측정 (업로드 → 파싱 완료: 10초 이내)\n5. CORS, 환경변수, localStorage 동작 확인\n6. 모바일 브라우저에서도 테스트 (반응형 확인)\n7. 최종 보고서 작성 (성공/실패 시나리오, 개선사항)",
+        "priority": "high",
+        "dependencies": [
+          19
+        ],
+        "status": "pending",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "created": "2026-04-28T08:58:21.204Z",
+      "updated": "2026-04-28T08:58:21.204Z",
+      "description": "Tasks for master context"
+    }
+  }
+}
