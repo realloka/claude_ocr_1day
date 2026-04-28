@@ -1,3 +1,26 @@
 .mcp.json
 .env
 .claude/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Data (runtime)
+backend/data/expenses.json
+backend/uploads/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Playwright MCP
+.playwright-mcp/

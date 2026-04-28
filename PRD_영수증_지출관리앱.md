@@ -798,7 +798,8 @@ module.exports = {
 | 스타일링 | TailwindCSS | v3+ |
 | HTTP 클라이언트 | Axios | v1+ |
 | 백엔드 | Python FastAPI | v0.111+ |
-| LLM 오케스트레이션 | LangChain | v0.2+ |
+| LLM 오케스트레이션 | LangChain | v1.2.15 |
+| LLM 오케스트레이션 코어 | LangChain-Core | v1.3.2 |
 | OCR LLM | Upstage document-digitization-vision | - |
 | 이미지 처리 | Pillow / pdf2image | - |
 | 데이터 저장 | JSON 파일 | DB 미사용 |
@@ -978,10 +979,13 @@ receipt-tracker/
 fastapi==0.111.0
 uvicorn[standard]==0.29.0
 python-multipart==0.0.9
-langchain==0.2.0
-langchain-upstage==0.1.0
-pillow==10.3.0
+langchain==1.2.15
+langchain-core==1.3.2
+langchain-upstage==0.7.7
+langchain-openai==1.2.1
+pillow>=12.0.0
 pdf2image==1.17.0
+pypdf
 python-dotenv==1.0.1
 ```
 
